@@ -1,0 +1,4 @@
+*.log
+*.pyc
+api/__pycache__/
+api/migrations/
