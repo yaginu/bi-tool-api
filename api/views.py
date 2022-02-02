@@ -1,3 +1,5 @@
+from turtle import shape
+from unicodedata import name
 from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework import generics
@@ -8,6 +10,7 @@ from sklearn.ensemble import RandomForestClassifier
 import pickle
 import os
 from rest_framework import status
+import tensorflow as tf
 
 from .models import Dataset
 from .serializers import DatasetSerializer, MLModelSerializer
@@ -47,23 +50,40 @@ class DatasetPreview(APIView):
 	
 class MLModelCreateView(APIView):
 	def post(self, request, *args, **kwargs):
+		data = request.data
 		file = Dataset.objects.get(id=kwargs["pk"]).file
-		df = pd.read_csv(file).drop('PassengerId', axis=1)
-		y = df.pop('Survived')
-		X = pd.get_dummies(df).fillna(0)
-		X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y)
-		clf = RandomForestClassifier()
-		clf.fit(X_train, y_train)
-		# score = clf.score(X_test, y_test)
-
 		model_dir = os.path.join(settings.MEDIA_ROOT, 'model')
 		os.makedirs(model_dir, exist_ok=True)
-		model_path = os.path.join(model_dir, "test_model.pickle")
 
-		with open(model_path, 'wb') as f:
-			pickle.dump(clf, f)
+		df = pd.read_csv(file).drop(['PassengerId', 'Name'] , axis=1)
+		y = df.pop('Survived')
+		df = df.fillna(df.mean())
+		df["Cabin"] = df["Cabin"].fillna(df["Cabin"].mode()[0])
+		X = pd.get_dummies(df)
+		X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y)
 
-		data = request.data
+		model_type = data.pop("model_type")
+		if model_type == 'rdf':
+			clf = RandomForestClassifier()
+			clf.fit(X_train, y_train)
+			clf.score(X_test, y_test)
+
+			model_path = os.path.join(model_dir, "test_model.pickle")
+			with open(model_path, 'wb') as f:
+				pickle.dump(clf, f)
+
+		else:
+			input_ = tf.keras.layers.Input(shape=X_train.shape[1:])
+			hidden = tf.keras.layers.Dense(128, activation="relu")(input_)
+			output = tf.keras.layers.Dense(1, activation="sigmoid")(hidden)
+			dnn = tf.keras.Model(inputs=[input_], outputs=[output])
+			dnn.compile(loss="binary_crossentropy", optimizer="adam")
+			dnn.fit(X_train, y_train, epochs=10)
+			dnn.evaluate(X_test, y_test)
+
+			model_path = os.path.join(model_dir, "test_model")
+			dnn.save(model_path)
+
 		data["file"] = model_path
 		serializer = MLModelSerializer(data=data)
 		
