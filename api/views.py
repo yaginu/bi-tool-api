@@ -1,5 +1,3 @@
-from turtle import shape
-from unicodedata import name
 from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework import generics
@@ -11,6 +9,7 @@ import pickle
 import os
 from rest_framework import status
 import tensorflow as tf
+import xgboost as xgb
 
 from .models import Dataset
 from .serializers import DatasetSerializer, MLModelSerializer
@@ -71,6 +70,16 @@ class MLModelCreateView(APIView):
 			model_path = os.path.join(model_dir, "test_model.pickle")
 			with open(model_path, 'wb') as f:
 				pickle.dump(clf, f)
+
+		elif model_type == 'xgb':
+			d_train = xgb.DMatrix(X_train, y_train)
+			param = {'max_depth': 2, 'eta': 1, 'objective': 'binary:logistic'}
+			num_round = 10
+			bst = xgb.train(param, d_train, num_round)
+
+			model_path = os.path.join(model_dir, "test_model.pickle")
+			with open(model_path, 'wb') as f:
+				pickle.dump(bst, f)			
 
 		else:
 			input_ = tf.keras.layers.Input(shape=X_train.shape[1:])
