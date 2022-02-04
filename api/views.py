@@ -10,6 +10,7 @@ import os
 from rest_framework import status
 import tensorflow as tf
 import xgboost as xgb
+from sklearn.preprocessing import MinMaxScaler
 
 from .models import Dataset
 from .serializers import DatasetSerializer, MLModelSerializer
@@ -61,18 +62,23 @@ class MLModelCreateView(APIView):
 		X = pd.get_dummies(df)
 		X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y)
 
+		scaler = MinMaxScaler()
+		scaler.fit(X_train)
+		X_train_scaled = scaler.fit_transform(X_train)
+		X_test_scaled = scaler.fit_transform(X_test)
+
 		model_type = data.pop("model_type")
 		if model_type == 'rdf':
 			clf = RandomForestClassifier()
-			clf.fit(X_train, y_train)
-			clf.score(X_test, y_test)
+			clf.fit(X_train_scaled, y_train)
+			clf.score(X_test_scaled, y_test)
 
 			model_path = os.path.join(model_dir, "test_model.pickle")
 			with open(model_path, 'wb') as f:
 				pickle.dump(clf, f)
 
 		elif model_type == 'xgb':
-			d_train = xgb.DMatrix(X_train, y_train)
+			d_train = xgb.DMatrix(X_train_scaled, y_train)
 			param = {'max_depth': 2, 'eta': 1, 'objective': 'binary:logistic'}
 			num_round = 10
 			bst = xgb.train(param, d_train, num_round)
@@ -87,8 +93,8 @@ class MLModelCreateView(APIView):
 			output = tf.keras.layers.Dense(1, activation="sigmoid")(hidden)
 			dnn = tf.keras.Model(inputs=[input_], outputs=[output])
 			dnn.compile(loss="binary_crossentropy", optimizer="adam")
-			dnn.fit(X_train, y_train, epochs=10)
-			dnn.evaluate(X_test, y_test)
+			dnn.fit(X_train_scaled, y_train, epochs=10)
+			dnn.evaluate(X_test_scaled, y_test)
 
 			model_path = os.path.join(model_dir, "test_model")
 			dnn.save(model_path)
